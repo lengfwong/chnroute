@@ -53,6 +53,8 @@ sort_files() {
             log_warn "$(basename "$file") not found, creating empty file"
             : >"$file"
         fi
+        #delete list_txt "#,blank"
+        sed -i -e  '/^#/d;/^$/d' "$file"
 
         sort -uo "$file" "$file"
     done
@@ -70,7 +72,7 @@ run_gfwlist2dnsmasq() {
     log_info "Generating domain list via ${GFWLIST2DNSMASQ_SH}..."
 
     local script_path="${SCRIPT_DIR}/${GFWLIST2DNSMASQ_SH}"
-    local autop_proxy="${SCRIPT_DIR}/${OUTPUT_GFWLIST_AUTOPROXY}"
+    #local autop_proxy="${SCRIPT_DIR}/${OUTPUT_GFWLIST_AUTOPROXY}"
     local output_path="${SCRIPT_DIR}/${GFWLIST_TXT}"
     local include_path="${SCRIPT_DIR}/${INCLUDE_LIST_TXT}"
     local exclude_path="${SCRIPT_DIR}/${EXCLUDE_LIST_TXT}"
@@ -81,10 +83,10 @@ run_gfwlist2dnsmasq() {
         return 1
     fi
 
-    if [[ ! -f "$autop_proxy" ]]; then
-        log_error "${OUTPUT_GFWLIST_AUTOPROXY} not found. Run parallel downloads first."
-        return 1
-    fi
+#   if [[ ! -f "$autop_proxy" ]]; then
+#       log_error "${OUTPUT_GFWLIST_AUTOPROXY} not found. Run parallel downloads first."
+#       return 1
+#   fi
 
     if bash "$script_path" \
         --domain-list \
@@ -351,10 +353,10 @@ main() {
 
     log_info "Starting chnroute generation pipeline..."
 
-    log_info "Step 1/5: Downloading source data"
-    if ! parallel_downloads; then
-        exit_code=1
-    fi
+#    log_info "Step 1/5: Downloading source data"
+#    if ! parallel_downloads; then
+#        exit_code=1
+#    fi
 
     log_info "Step 2/5: Sorting custom domain lists"
     sort_files
@@ -371,8 +373,8 @@ main() {
         fi
     fi
 
-    log_info "Step 5/5: Checking git repository"
-    check_git_status || exit_code=1
+#    log_info "Step 5/5: Checking git repository"
+#    check_git_status || exit_code=1
 
     local end_time
     end_time=$(date +%s)
