@@ -1,2 +1,8 @@
 .vscode
 gfwlist_autoproxy.txt
+exclude_list.txt
+gfwlist.txt
+gfwlist_v7.rsc
+include_list.txt
+gfwlist_v7old.rsc
+diff.txt
