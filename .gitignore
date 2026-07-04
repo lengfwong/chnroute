@@ -1,4 +1,5 @@
 .vscode
+.omo/
 gfwlist_autoproxy.txt
 exclude_list.txt
 gfwlist.txt
