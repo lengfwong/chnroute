@@ -24,7 +24,7 @@ check_deps() {
     log_info "Checking dependencies..."
     
     local missing=0
-    local required_cmds=("bash" "curl" "awk" "sort" "base64" "grep" "sed" "tar")
+    local required_cmds=("bash" "curl" "awk" "sort" "base64" "grep" "wc" "mktemp" "tar")
 
     for cmd in "${required_cmds[@]}"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -35,10 +35,6 @@ check_deps() {
 
     if [ ! -x /usr/bin/time ]; then
         log_warn "/usr/bin/time not available -- detailed timing output reduced"
-    fi
-
-    if ! command -v python3 >/dev/null 2>&1; then
-        log_warn "python3 not found -- benchmarks will skip average calculation"
     fi
 
     if ! command -v shellcheck >/dev/null 2>&1; then
