@@ -42,6 +42,16 @@ endef
 define log_info
 	printf '%b[INFO]%b %s\n' "$(COLOR_CYAN)" "$(COLOR_RESET)" "$(1)"
 endef
+define file_stats
+	for file in $(OUTPUT_FILES); do \
+		if [ -f "$$file" ]; then \
+			printf '  %s: %s lines, %s bytes\n' "$$file" "$$(wc -l < "$$file")" "$$(wc -c < "$$file")"; \
+		else \
+			printf '  %s: (not generated)\n' "$$file"; \
+		fi; \
+	done
+endef
+
 
 all: generate validate-output
 
@@ -76,7 +86,7 @@ help:
 check-deps:
 	@$(call log,Checking dependencies...)
 	@missing=0; \
-	for cmd in bash curl awk sort base64 grep sed tar; do \
+	for cmd in bash curl awk sort base64 grep wc mktemp tar; do \
 		if ! command -v $$cmd >/dev/null 2>&1; then \
 			$(call log_error,Command "$$cmd" is required but not found); \
 			missing=$$((missing + 1)); \
@@ -84,9 +94,6 @@ check-deps:
 	done; \
 	if [ ! -x /usr/bin/time ]; then \
 		$(call log_warn,/usr/bin/time not available -- detailed timing output reduced); \
-	fi; \
-	if ! command -v python3 >/dev/null 2>&1; then \
-		$(call log_warn,python3 not found -- benchmarks will skip average calculation); \
 	fi; \
 	if ! command -v shellcheck >/dev/null 2>&1; then \
 		$(call log_warn,shellcheck not available -- static analysis skipped); \
@@ -155,21 +162,13 @@ validate: validate-output
 
 clean:
 	@$(call log,Removing temporary files...)
-	@rm -rf logs/ *.tmp *.processed chnroute_* .make.d
-	@find . -name '*.log' -delete 2>/dev/null || true
-	@find . -name 'gfwlist_autoproxy.txt' -delete 2>/dev/null || true
-	@find . -name '*.bak' -delete 2>/dev/null || true
+	@rm -rf logs/ *.tmp chnroute_* .make.d
+	@find . \( -name '*.log' -o -name 'gfwlist_autoproxy.txt' -o -name '*.bak' \) -delete 2>/dev/null || true
 	@$(call log_success,Cleanup completed)
 
 test: generate validate-output
 	@$(call log,Running comprehensive checks...)
-	@for file in $(OUTPUT_FILES); do \
-		if [ -f "$$file" ]; then \
-			lines=$$(wc -l < "$$file"); \
-			size=$$(wc -c < "$$file"); \
-			printf '  %s: %s lines, %s bytes\n' "$$file" "$$lines" "$$size"; \
-		fi; \
-	done
+	@$(file_stats)
 	@$(call log_success,Comprehensive checks passed)
 
 benchmark:
@@ -186,32 +185,17 @@ benchmark:
 		echo '  Warm cache run:'; \
 		time -p bash "$(SCRIPT)" >/dev/null; \
 	fi
-	@if command -v python3 >/dev/null 2>&1; then \
-		echo '  Average of 3 runs:'; \
-		SCRIPT_PATH="$(SCRIPT)" python3 - <<-'PY'; \
-	import os
-	import subprocess
-	import sys
-	import time
-
-	script = os.environ.get("SCRIPT_PATH")
-	if not script:
-	    sys.exit("SCRIPT_PATH is not set")
-
-	durations = []
-	for idx in range(1, 4):
-	    start = time.perf_counter()
-	    subprocess.run(["bash", script], check=True, stdout=subprocess.DEVNULL)
-	    duration = time.perf_counter() - start
-	    durations.append(duration)
-	    print(f"    Run {idx}: {duration:.3f} s")
-
-	avg = sum(durations) / len(durations)
-	print(f"  Average: {avg:.3f} s")
-	PY
-	else \
-		$(call log_warn,python3 not found -- skipping averaged timing); \
-	fi
+	@echo '  Average of 3 runs:'; \
+	total_ms=0; \
+	for i in 1 2 3; do \
+		start=$$(date +%s%N); \
+		bash "$(SCRIPT)" >/dev/null; \
+		end=$$(date +%s%N); \
+		ms=$$(( (end - start) / 1000000 )); \
+		printf '    Run %s: %d.%03d s\n' "$$i" $$((ms / 1000)) $$((ms % 1000)); \
+		total_ms=$$((total_ms + ms)); \
+	done; \
+	printf '  Average: %d.%03d s\n' $$((total_ms / 3000)) $$(( (total_ms / 3) % 1000 ))
 	@$(call log_success,Benchmark completed)
 
 analyze:
@@ -232,7 +216,7 @@ analyze:
 memory-profile:
 	@$(call log,Collecting memory profile...)
 	@if command -v /usr/bin/time >/dev/null 2>&1; then \
-		/usr/bin/time -v bash "$(SCRIPT)" >/dev/null 2>&1 | grep -E 'Maximum resident set size|User time|System time|Percent of CPU' || true; \
+		/usr/bin/time -v bash "$(SCRIPT)" 2>&1 >/dev/null | grep -E 'Maximum resident set size|User time|System time|Percent of CPU' || true; \
 	else \
 		$(call log_warn,/usr/bin/time not available -- skipping memory profile); \
 	fi
@@ -298,7 +282,7 @@ install: generate validate-output
 	@cp exclude_list.txt "$(CONFIG_DIR)/" 2>/dev/null || true
 	@chmod 755 "$(INSTALL_DIR)"/*.sh
 	@chmod 644 "$(INSTALL_DIR)"/*.rsc "$(INSTALL_DIR)"/*.txt "$(INSTALL_DIR)"/*.conf
-	@printf 'LOG_LEVEL=INFO\nPARALLEL_THREADS=4\n' > "$(CONFIG_DIR)/config.conf"
+	@printf 'LOG_LEVEL=INFO\n' > "$(CONFIG_DIR)/config.conf"
 	@$(call log_success,Installation complete)
 
 service-setup: install
@@ -380,14 +364,14 @@ package: clean generate validate-output
 	for file in $(OUTPUT_FILES); do cp "$$file" "dist/$$pkg_name/"; done; \
 	cp "$(SCRIPT)" "$(GFW_SCRIPT)" "dist/$$pkg_name/"; \
 	cp -r lib "dist/$$pkg_name/"; \
-	for doc in README.md README.en.md MAKEFILE_OPTIMIZATION_GUIDE.md SCRIPT_OPTIMIZATION_RECOMMENDATIONS.md; do \
+	for doc in README.md README.en.md MAKEFILE_USER_GUIDE.md MAKEFILE_USER_GUIDE_CN.md; do \
 		[ -f "$$doc" ] && cp "$$doc" "dist/$$pkg_name/"; \
 	done; \
 	cp include_list.txt "dist/$$pkg_name/" 2>/dev/null || true; \
 	cp exclude_list.txt "dist/$$pkg_name/" 2>/dev/null || true; \
 	printf 'chnroute %s\nGenerated on: %s\n' "$$version" "$$(date)" > "dist/$$pkg_name/README_PACKAGE.txt"; \
-	( cd dist && tar -czf "$$pkg_name.tar.gz" "$$pkg_name" ); \
-	@$(call log_success,Created package dist/$$pkg_name.tar.gz)
+	( cd dist && tar -czf "$$pkg_name.tar.gz" "$$pkg_name" )
+	@$(call log_success,Created package under dist/)
 
 info:
 	@printf '%bChina Route Generator%b\n' "$(COLOR_BOLD)" "$(COLOR_RESET)"
@@ -396,12 +380,4 @@ info:
 	@printf 'Install Dir: %s\n' "$(INSTALL_DIR)"
 	@printf 'Config Dir: %s\n\n' "$(CONFIG_DIR)"
 	@printf '%bOutput files:%b\n' "$(COLOR_BLUE)" "$(COLOR_RESET)"
-	@for file in $(OUTPUT_FILES); do \
-		if [ -f "$$file" ]; then \
-			size=$$(wc -c < "$$file"); \
-			lines=$$(wc -l < "$$file"); \
-			printf '  %s: %s lines, %s bytes\n' "$$file" "$$lines" "$$size"; \
-		else \
-			printf '  %s: (not generated)\n' "$$file"; \
-		fi; \
-	done
+	@$(file_stats)

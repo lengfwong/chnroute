@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-# Structured logging utilities with levels and optional log file support.
+# Structured logging utilities with levels.
 
 readonly LOG_LEVEL_DEBUG=0
 readonly LOG_LEVEL_INFO=1
@@ -27,8 +27,9 @@ _log_dispatch() {
         return
     fi
 
-    local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    # bash >= 4.2 formats the current time without forking `date`.
+    printf -v timestamp '%(%Y-%m-%d %H:%M:%S)T' -1 2>/dev/null ||
+        timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     printf '[%s] %b[%s]%b %s\n' "$timestamp" "$color" "$level_name" "$COLOR_RESET" "$message"
 }
 
@@ -50,10 +51,5 @@ log_error() {
 
 log_success() {
     _log_dispatch "SUCCESS" "$LOG_LEVEL_INFO" "$COLOR_GREEN" "$@"
-}
-
-initialize_logging() {
-    # Logging disabled - output to stdout only
-    :
 }
 
