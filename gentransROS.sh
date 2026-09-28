@@ -46,6 +46,11 @@ check_deps() {
         exit 1
     fi
 
+    if (( BASH_VERSINFO[0] < 4 )); then
+        log_error "Bash 4.0 or higher is required (current: ${BASH_VERSION})"
+        return 1
+    fi
+
     log_success "All mandatory dependencies are available"
 }
 
@@ -70,21 +75,6 @@ check() {
     log_info "Chnroute version ${VERSION}"
     check_deps
     validate_syntax
-}
-
-# Generate routing rule file (generate)
-generate() {
-    check
-    log_info "get openwrt list rule"
-    getop_rule
-    log_info "Generating China route artifacts..."
-
-    if bash "$SCRIPT"; then
-        log_success "Generation completed"
-    else
-        log_error "Generation failed"
-        exit 1
-    fi
 }
 
 # Validate the generated file structure (validate-output)
@@ -127,13 +117,54 @@ local exclude_path="${SCRIPT_DIR}/${EXCLUDE_LIST_TXT}"
 local gfwpluslist="${SCRIPT_DIR}/openwrt/gfwplus_list.txt"
 local greylist="${SCRIPT_DIR}/openwrt/greylist.txt"
 local excludelist="${SCRIPT_DIR}/openwrt/excludegfw.txt"
+local rsync_output
+local rsync_status
 
+    rsync_output=$(rsync -avP --itemize-changes \
+        --include={gfwplus_list.txt,greylist.txt,excludegfw.txt} \
+        --exclude="/*" \
+        root@opx86:/etc/mosdns/rule/ \
+        "${SCRIPT_DIR}/openwrt/" 2>&1)
+    rsync_status=$?
 
-rsync -avP --include={gfwplus_list.txt,greylist.txt,excludegfw.txt} --exclude="/*" root@opx86:/etc/mosdns/rule/ "${SCRIPT_DIR}/openwrt/"
-cp "${gfwpluslist}" "${include_path}"
-cp "${excludelist}" "${exclude_path}"
-cat "${greylist}" >> "${include_path}"
+    # Check rsync result.
+    if [ "$rsync_status" -ne 0 ]; then
+        log_error "OpenWrt rule synchronization failed."
 
+        while IFS= read -r line; do
+            log_error "$line"
+        done <<< "$rsync_output"
+
+        return "$rsync_status"
+    fi
+
+    # Check whether any file was synchronized.
+    if ! printf '%s\n' "$rsync_output" | grep -q '^>f'; then
+        log_info "OpenWrt rule files are already up to date."
+        return 0
+    fi
+
+local synced_files=()
+
+    while IFS= read -r file; do
+        synced_files+=("$file")
+    done < <(
+        printf '%s\n' "$rsync_output" |
+            awk '$1 ~ /^>f/ {print $2}'
+    )
+
+    log_success "OpenWrt rule files synchronized successfully: ${synced_files[*]}"
+
+    # Apply the updated OpenWrt rules.
+    if cp "${gfwpluslist}" "${include_path}" &&
+       cp "${excludelist}" "${exclude_path}" &&
+       cat "${greylist}" >> "${include_path}"; then
+
+        log_success "OpenWrt rules applied successfully."
+    else
+        log_error "Failed to apply OpenWrt rules."
+        return 1
+    fi
 }
 
 transros() {
@@ -158,15 +189,32 @@ if [ -s "$diff" ] ; then
 fi
 }
 
+# Generate routing rule file (generate)
+generate() {
+#  check
+    log_info "get openwrt list rule"
+    getop_rule
+    log_info "Generating China route artifacts..."
+
+    if bash "$SCRIPT"; then
+        log_success "Generation completed"
+    else
+        log_error "Generation failed"
+        exit 1
+    fi
+    validate_output
+    transros
+}
+
 show_help() {
     echo "Usage: $0 [command]"
     echo ""
     echo "Available commands:"
-    echo "  (none)           Default: Run check, generate, and validate-output in sequence"
+    echo "  (none)           Default: Run check, generate, validate-output and tranros in sequence"
     echo "  check-deps       Check for required system dependencies"
     echo "  validate-syntax  Validate syntax of shell scripts using bash -n & shellcheck"
     echo "  check            Run both check-deps and validate-syntax"
-    echo "  generate         Generate China route artifacts"
+    echo "  generate         Generate China route artifacts and run validate-output,transros"
     echo "  validate-output  Validate presence and size of generated output files"
     echo "  transros         transfer gfwlist_v7.rsc to MIROS"
     echo "  help             Show this help message"
@@ -178,11 +226,9 @@ show_help() {
 main() {
     # If no arguments are passed, the default execution sequence is check -> generate -> validate_output -> transros.
     if [ $# -eq 0 ]; then
-        log_info "No command specified, running default pipeline..."
-        check_deps
+        log_info "No command Args provided, running default sequence:check->generate(include validate_output,transros)"
+        check
         generate
-        validate_output
-        transros
         exit 0
     fi
 

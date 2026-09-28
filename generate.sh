@@ -202,8 +202,8 @@ parallel_downloads() {
 
     # Both sources are independent, so they are fetched concurrently and the
     # exit status of each job decides the outcome.
- #  download_with_retry "$CN_URL" "${SCRIPT_DIR}/${CN_RSC}" 60 &
- #  local cn_pid=$!
+#   download_with_retry "$CN_URL" "${SCRIPT_DIR}/${CN_RSC}" 60 &
+#   local cn_pid=$!
 
     # The decoded copy is only written inside the temp tree on success, so a
     # failed download can never be mistaken for a usable (empty) GFWList.
@@ -216,11 +216,11 @@ parallel_downloads() {
 
     local cn_ok=true
     local gfwlist_ok=false
- #  if wait "$cn_pid"; then
- #      cn_ok=true
- #  else
- #      log_error "CN list download failed"
- #  fi
+#   if wait "$cn_pid"; then
+#       cn_ok=true
+#   else
+#       log_error "CN list download failed"
+#   fi
     if wait "$gfwlist_pid"; then
         gfwlist_ok=true
     else
@@ -240,7 +240,7 @@ main() {
     trap 'cleanup_artifacts; cleanup_temp_root' EXIT
     setup_error_trap
     setup_platform_specific
-    check_dependencies_detailed
+#   check_dependencies_detailed
 
     check_system_resources
     local start_time
@@ -249,11 +249,12 @@ main() {
 
     log_info "Starting chnroute generation pipeline..."
 
-    log_info "Step 1/4: Downloading source data and creating CN lists"
+#   log_info "Step 1/4: Downloading source data and creating CN lists"
+    log_info "Step 1/4: Downloading source data"
     if ! parallel_downloads; then
         exit_code=1
-  # elif ! generate_cn_ip_list "${SCRIPT_DIR}/${CN_RSC}" "${SCRIPT_DIR}/${CN_MEM_RSC}"; then
-  #     exit_code=1
+#   elif ! generate_cn_ip_list "${SCRIPT_DIR}/${CN_RSC}" "${SCRIPT_DIR}/${CN_MEM_RSC}"; then
+#       exit_code=1
     fi
 
     log_info "Step 2/4: Sorting custom domain lists"
